@@ -1,0 +1,356 @@
+---
+title: "Viperidos y arodromo"
+author: "Patrick Alcazar"
+date: '2022-06-22'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Carga de paquetes
+
+library(dplyr) # transformación de datos
+library(sf) # manejo de datos vectoriales
+library(DT) # tablas interactivas
+library(leaflet) # mapas interactivos
+library(leaflet.extras) # funciones adicionales de leaflet
+library(leafem) # funciones adicionales de leaflet
+library(spData)
+
+# Lectura y visualización de datos geoespaciales de provincias
+
+# Lectura
+provincias <-
+  st_read(
+    dsn = "C:/Users/gf0604-1/Desktop/practicas git/Trabajo_mapa/provincias.geojson",
+    quiet = TRUE
+  ) %>%
+  st_transform(4326) # transformación a WGS84
+
+# Transformación
+provincias <-
+  provincias %>%
+  st_transform(5367) %>%
+  st_simplify(dTolerance = 100) %>% # simplificación de geometrías
+  st_transform(4326)
+
+# Visualización en un mapa
+plot(
+  provincias$geometry,
+  extent = st_bbox(c(xmin = -86.0, xmax = -82.3, ymin = 8.0, ymax = 11.3)),
+  main = "Provincias de Costa Rica",
+  axes = TRUE,
+  graticule = TRUE
+)
+
+# Lectura y visualización de datos geoespaciales de cantones
+
+# Lectura
+cantones <-
+  st_read(
+    dsn = "C:/Users/gf0604-1/Desktop/practicas git/Trabajo_mapa/cantones.geojson",
+    quiet = TRUE
+  ) %>%
+  st_transform(4326) # transformación a WGS84
+
+# Transformación
+cantones <-
+  cantones %>%
+  st_transform(5367) %>%
+  st_simplify(dTolerance = 100) %>% # simplificación de geometrías
+  st_transform(4326)
+
+# Visualización en un mapa
+plot(
+  cantones$geometry,
+  extent = st_bbox(c(xmin = -86.0, xmax = -82.3, ymin = 8.0, ymax = 11.3)),
+  main = "Cantones de Costa Rica",
+  axes = TRUE,
+  graticule = TRUE
+)
+
+# Lectura y visualización de datos geoespaciales de aeródromos
+
+# Lectura
+aerodromos <-
+  st_read(
+    dsn = "C:/Users/gf0604-1/Desktop/practicas git/Trabajo_mapa/aerodromos.geojson",
+    quiet = TRUE
+  ) %>%
+  st_transform(4326) # transformación a WGS84
+
+# Visualización en un mapa
+plot(
+  aerodromos$geometry,
+  pch = 16,
+  main = "Aeródromos de Costa Rica",
+  axes = TRUE,
+  graticule = TRUE
+)
+
+# Lectura y visualización de datos geoespaciales de viperidos
+
+# Lectura
+viperidos <-
+  st_read(
+    "C:/Users/gf0604-1/Desktop/practicas git/Trabajo_mapa/viperidos.csv",
+    options = c(
+      "X_POSSIBLE_NAMES=decimalLongitude", # columna de longitud decimal
+      "Y_POSSIBLE_NAMES=decimalLatitude"   # columna de latitud decimal
+    ),
+    quiet = TRUE
+  )
+
+# Asignación del CRS WGS84
+st_crs(viperidos) <- 4326
+
+# Visualización en un mapa
+plot(
+  viperidos$geometry,
+  pch = 16,
+  main = "Vipéridos de Costa Rica",
+  axes = TRUE,
+  graticule = TRUE
+)
+
+# Selección de la provincia de Limón (por atributos)
+limon <- provincias[provincias$provincia == "Limón",]
+
+# Selección de los aeródromos ubicados en Limón (espacial)
+aerodromos_limon <- aerodromos[limon, , op = st_within]
+
+# Mapa leaflet
+leaflet() %>%
+  addTiles() %>% # capa base de OSM
+  addPolygons( # capa de provincias (polígonos)
+    data = limon,
+    color = "black",
+    fillColor = "transparent",
+    stroke = TRUE,
+    weight = 1.0,
+  ) %>%  
+  addCircleMarkers( # capa de registros de presencia (puntos)
+    data = aerodromos_limon,
+    stroke = F,
+    radius = 4,
+    fillColor = 'brown',
+    fillOpacity = 1
+  )
+# Selección de la provincia de Limón (por atributos)
+limon <- provincias[provincias$provincia == "Limón",]
+
+# Selección de los aeródromos ubicados en Limón (espacial)
+aerodromos_limon <- aerodromos[limon, , op = st_within]
+
+# Mapa leaflet
+leaflet() %>%
+  addTiles() %>% # capa base de OSM
+  addPolygons( # capa de provincias (polígonos)
+    data = limon,
+    color = "black",
+    fillColor = "transparent",
+    stroke = TRUE,
+    weight = 1.0,
+  ) %>%  
+  addCircleMarkers( # capa de registros de presencia (puntos)
+    data = aerodromos_limon,
+    stroke = F,
+    radius = 4,
+    fillColor = 'brown',
+    fillOpacity = 1,
+    popup = aerodromos_limon$nombre)
+
+# Unión de provincias y vipéridos a través st_join()
+viperidos <- 
+  viperidos %>%
+  st_join(provincias[c("cod_provin", "provincia")])
+
+# Despliegue de los datos unidos
+viperidos %>%
+  st_drop_geometry() %>%
+  select(species, stateProvince, provincia, locality) %>%
+  datatable(options = list(
+    pageLength = 10,
+    language = list(url = '//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json')
+  ))
+
+# Conteo de registros de presencia por código de provincia
+registros_viperidos_x_provincia <-
+  viperidos %>%
+  st_drop_geometry() %>%
+  count(cod_provin, name = "registros_viperidos")
+
+# Unión de cantidad de registros de presencia por provincia a provincias
+provincias_viperidos <-
+  provincias %>%
+  left_join(
+    registros_viperidos_x_provincia,
+    by = "cod_provin",
+    copy = FALSE,
+    keep = FALSE
+  )
+
+colores_provincias_registros_viperidos <-
+  colorNumeric(palette = "Reds",
+               domain = provincias_viperidos$registros_viperidos,
+               na.color = "transparent")
+
+# Visualización en un mapa generado con plot()
+plot(
+  provincias_viperidos["registros_viperidos"],
+  extent = st_bbox(c(xmin = -86.0, xmax = -82.3, ymin = 8.0, ymax = 11.3)),
+  col = colores_provincias_registros_viperidos(provincias_viperidos$registros_viperidos),
+  main = "Cantidad de registros de presencia de vipéridos en provincias de Costa Rica",
+  axes = TRUE,
+  graticule = TRUE
+)
+
+# Conteo de especies por código de provincia
+especies_viperidos_x_provincia <-
+  viperidos %>%
+  st_drop_geometry() %>%
+  filter(taxonRank == "SPECIES" | taxonRank == "SUBSPECIES") %>% # para excluir identificaciones a género o superiores
+  group_by(cod_provin) %>%
+  summarise(especies_viperidos = n_distinct(species, na.rm = TRUE))
+
+# Unión de cantidad de registros de presencia por provincia a provincias
+provincias_viperidos <-
+  provincias_viperidos %>%
+  left_join(
+    especies_viperidos_x_provincia,
+    by = "cod_provin",
+    copy = FALSE,
+    keep = FALSE
+  )
+
+# Paleta de colores para los mapas
+colores_provincias_especies_viperidos <-
+  colorNumeric(palette = "Blues",
+               domain = provincias_viperidos$especies_viperidos,
+               na.color = "transparent")
+# Visualización en un mapa generado con plot()
+plot(
+  provincias_viperidos["especies_viperidos"],
+  extent = st_bbox(c(xmin = -86.0, xmax = -82.3, ymin = 8.0, ymax = 11.3)),
+  col = colores_provincias_especies_viperidos(provincias_viperidos$especies_viperidos),
+  main = "Cantidad de especies de vipéridos en provincias de Costa Rica",
+  axes = TRUE,
+  graticule = TRUE
+)
+
+# Visualización en formato de tabla
+provincias_viperidos %>%
+  st_drop_geometry() %>%
+  select(provincia, especies_viperidos, registros_viperidos) %>%
+  arrange(desc(especies_viperidos)) %>%
+  datatable(options = list(
+    pageLength = 10,
+    language = list(url = '//cdn.datatables.net/plug-ins/1.10.11/i18n/Spanish.json')
+  ))
+
+# Mapa leaflet de vipéridos en provincias
+leaflet() %>%
+  setView(# centro y nivel inicial de acercamiento
+    lng = -84.19452,
+    lat = 9.572735,
+    zoom = 7) %>%
+  addTiles(group = "OpenStreetMap") %>% # capa base
+  addPolygons(
+    data = provincias_viperidos,
+    fillColor = ~ colores_provincias_registros_viperidos(provincias_viperidos$registros_viperidos),
+    fillOpacity = 0.8,
+    color = "black",
+    stroke = TRUE,
+    weight = 1.0,
+    popup = paste(
+      paste(
+        "<strong>Provincia:</strong>",
+        provincias_viperidos$provincia
+      ),
+      paste(
+        "<strong>Registros:</strong>",
+        provincias_viperidos$registros_viperidos
+      ),
+      sep = '<br/>'
+    ),
+    group = "Cantidad de registros de vipéridos"
+  ) %>%
+  addPolygons(
+    data = provincias_viperidos,
+    fillColor = ~ colores_provincias_especies_viperidos(provincias_viperidos$especies_viperidos),
+    fillOpacity = 0.8,
+    color = "black",
+    stroke = TRUE,
+    weight = 1.0,
+    popup = paste(
+      paste(
+        "<strong>Provincia:</strong>",
+        provincias_viperidos$provincia
+      ),
+      paste(
+        "<strong>Registros:</strong>",
+        provincias_viperidos$especies_viperidos
+      ),
+      sep = '<br/>'
+    ),
+    group = "Cantidad de especies de vipéridos"
+  ) %>%
+  addHeatmap(
+    data = viperidos,
+    lng = ~decimalLongitude,
+    lat = ~decimalLatitude,
+    radius = 10,
+    blur = 20,
+    group = "Mapa de calor"
+  ) %>%  
+  addCircleMarkers(
+    data = viperidos,
+    stroke = F,
+    radius = 3,
+    fillColor = 'black',
+    fillOpacity = 1,
+    popup = paste(
+      viperidos$species,
+      viperidos$provincia,
+      viperidos$eventDate,
+      paste0("<a href='", viperidos$occurrenceID, "'>Más información</a>"),
+      sep = '<br/>'
+    ),
+    clusterOptions = markerClusterOptions(),
+    group = "Registros de presencia de vipéridos"
+  ) %>%
+  addLayersControl(
+    baseGroups = c("OpenStreetMap"),
+    overlayGroups = c(
+      "Cantidad de registros de vipéridos",
+      "Cantidad de especies de vipéridos",
+      "Mapa de calor",
+      "Registros de presencia de vipéridos"
+    )
+  ) %>%
+  addLegend(
+    position = "bottomleft",
+    pal = colores_provincias_registros_viperidos,
+    values = provincias_viperidos$registros_viperidos,
+    group = "Cantidad de registros de vipéridos",
+    title = "Cantidad de registros"
+  ) %>%
+  addLegend(
+    position = "bottomleft",
+    pal = colores_provincias_especies_viperidos,
+    values = provincias_viperidos$especies_viperidos,
+    group = "Cantidad de especies de vipéridos",
+    title = "Cantidad de especies"
+  )  %>%
+  addResetMapButton() %>%
+  addSearchOSM() %>%
+  addMouseCoordinates() %>%
+  addScaleBar(position = "bottomright", options = scaleBarOptions(imperial = FALSE)) %>%
+  addMiniMap(position = "bottomright") %>%
+  hideGroup("Cantidad de especies de vipéridos") %>%
+  hideGroup("Mapa de calor")  
+```
+
